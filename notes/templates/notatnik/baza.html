@@ -1,0 +1,174 @@
+{% extends 'notatnik/main.html' %}
+{% load static %}
+{% block content %}
+<link rel="stylesheet" type="text/css" href="{% static 'css/baza.css' %}">
+    <div class="container mt-5">
+        <div class="row mt-5">
+            <div class="col-md-6 offset-md-3">
+                <h2>Wybierz przedmiot:</h2>
+                {% if message %}
+                <div class="alert alert-success" role="alert">
+                    {{ message }}
+                </div>
+                {% endif %}
+                {% if message_del %}
+                <div class="alert alert-warning" role="alert">
+                    {{ message_del }}
+                </div>
+                {% endif %}
+                <form>
+                    <div class="form-group">
+                        <select class="form-control" id="subject">
+                            <option value="" selected disabled>Wybierz przedmiot</option>
+                            {% for przedmiot in przedmioty %}
+                            <option value="{{ przedmiot.id }}">{{ przedmiot.nazwa }}</option>
+                            {% endfor %}
+                            <option value="all">Wszystkie przedmioty</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <div class="row mt-3">
+            <div class="col-md-6 offset-md-3" style="margin-bottom: 50px;">
+                <h2>Twoje notatki</h2>
+                <ul class="list-group" id="notes-list">
+                    {% for notatka in notatki %}    
+                        <li class="list-group-item" data-note="{{ notatka.id }}" data-przedmiot="{{ notatka.przedmiot.id }}" data-tytul="{{ notatka.tytul }}" data-tresc="{{ notatka.tresc }}" data-data_utworzenia="{{ notatka.data_utworzenia }}">
+                            <div class="note-info">
+                                <span><b>{{ notatka.przedmiot.nazwa }}:</b></span>
+                                <span class="note-title">{{ notatka.tytul }}</span>
+                                <p class="note-date">{{ notatka.data_utworzenia }}</p>
+                            </div>   
+                            <form method="post" style="display: inline;">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="usun_notatke">
+                                <input type="hidden" name="note_id" value="{{ notatka.id }}">
+                                <button type="submit" class="btn btn-danger">Usuń notatkę</button>
+                            </form>                       
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        
+    </div>
+
+    <div class="modal-overlay" id="modal-overlay"></div>
+
+    <div class="modal" id="modal">
+        <button class="close-button" id="close-button">&times;</button>
+        <div class="modal-content">
+            <h2 id="modal-title"></h2>
+            <p id="modal-content"></p>
+        </div>
+        <p id="modal-date"></p>
+    </div>
+
+    <script type="text/javascript">
+        // Obsługa wyświetlania modalu i edycji notatki
+        document.addEventListener('DOMContentLoaded', function() {
+            var listItems = document.querySelectorAll('.list-group-item');
+            listItems.forEach(function(item) {
+                item.addEventListener('click', function() {
+                    var modal = document.getElementById('modal');
+                    var modalOverlay = document.getElementById('modal-overlay');
+                    var modalTitle = document.getElementById('modal-title');
+                    var modalContent = document.getElementById('modal-content');
+                    var modalDate = document.getElementById('modal-date');
+                    var noteTitle = this.getAttribute('data-tytul');
+                    var noteContent = this.getAttribute('data-tresc');
+                    var noteDate = this.getAttribute('data-data_utworzenia');
+                    var noteId = this.getAttribute('data-note');
+
+                    modalTitle.textContent = "Temat: " + noteTitle;
+                    modalContent.innerHTML = "";
+
+                    var noteContentElement = document.createElement('p');
+                    noteContentElement.textContent = noteContent;
+                    modalContent.appendChild(noteContentElement);
+
+                    var editForm = document.createElement('form');
+                    editForm.style.display = 'none';
+                    editForm.setAttribute('method', 'post');
+                    editForm.style.marginTop = '20px';
+
+                    var csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+                    editForm.innerHTML = `
+                        <input type="hidden" name="csrfmiddlewaretoken" value="${csrfToken}">
+                        <input type="hidden" name="action" value="edytuj_notatke">
+                        <input type="hidden" name="note_id" value="${noteId}"> 
+                        <div class="form-group">
+                            <label for="edited-content">Edytuj treść notatki:</label>
+                            <textarea class="form-control" id="edited-content" name="edited_content" rows="12">${noteContent}</textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Zapisz zmiany</button>
+                    `;
+                    modalContent.appendChild(editForm);
+
+                    modalDate.textContent = "Data utworzenia: " + noteDate;
+
+                    var editButton = document.createElement('button');
+                    editButton.textContent = "Edytuj notatkę";
+                    editButton.classList.add('btn', 'btn-primary', 'mb-2');
+                    editButton.style.marginLeft = '100px';
+                    editButton.onclick = function() {
+                        editForm.style.display = 'block';
+                        noteContentElement.style.display = 'none';
+                        editButton.style.display = 'none';
+                    };
+                    modalDate.appendChild(editButton);
+
+                    modal.style.display = 'block';
+                    modalOverlay.style.display = 'block';
+
+                    var closeButton = document.getElementById('close-button');
+                    closeButton.onclick = function() {
+                        modal.style.display = 'none';
+                        modalOverlay.style.display = 'none';
+                    };
+                });
+            });
+        });
+        // Obsługa usuwania notatek
+        var deleteButtons = document.querySelectorAll('button.btn-danger');
+        deleteButtons.forEach(function(button) {
+            button.addEventListener('click', function(event) {
+                var confirmDelete = confirm("Czy na pewno chcesz usunąć tę notatkę?");
+                if (!confirmDelete) {
+                    event.stopPropagation();
+                    event.preventDefault();
+                }
+            });
+        });
+
+        // Obsługa zmiany wybranego przedmiotu
+        document.getElementById('subject').addEventListener('change', function() {
+            var selectedSubjectId = this.value;
+            var notesList = document.getElementById('notes-list');
+            var notes = notesList.getElementsByClassName('list-group-item');
+            var firstNote = true;
+
+            for (var i = 0; i < notes.length; i++) {
+                var note = notes[i];
+                var notePrzedmiotId = note.getAttribute('data-przedmiot');
+
+                if (selectedSubjectId === 'all' || selectedSubjectId === notePrzedmiotId) {
+                    note.style.display = 'block';
+                    if (firstNote){
+                        note.style.borderTop = '1px solid lightgrey';
+                        note.style.borderRadius = '5px 5px 0 0';
+                        firstNote = false;
+                    }
+                } else {
+                    note.style.display = 'none';
+                }
+            }
+        });
+
+
+
+    </script>
+</div>
+
+{% endblock content %}
